@@ -18,11 +18,19 @@ from zoneinfo import ZoneInfo
 
 import google.auth
 from google.adk.agents import Agent
+from google.adk.agents import LlmAgent
+from agent.prompts import return_instructions_root
 
-_, project_id = google.auth.default()
+credentials, project_id = google.auth.default()
+if not project_id:
+    # Fallback if ADC does not return project_id
+    print("⚠️ WARNING: google.auth.default() did not return a project_id.")
+    project_id = "your-project-id"  # <-- set manually or raise exception
+
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+
 
 
 def get_weather(query: str) -> str:
@@ -61,6 +69,7 @@ def get_current_time(query: str) -> str:
 root_agent = Agent(
     name="root_agent",
     model="gemini-2.5-flash",
-    instruction="You are a helpful AI assistant designed to provide accurate and useful information.",
-    tools=[get_weather, get_current_time],
+    description = "Greets the user and guides the user through the Contract Analysis Process.",
+    instruction=return_instructions_root(),
+    # tools=[get_weather, get_current_time],
 )

@@ -29,10 +29,11 @@ from opentelemetry.sdk.trace import TracerProvider, export
 from vertexai import agent_engines
 from vertexai.preview.reasoning_engines import AdkApp
 
-from app.agent import root_agent
-from app.utils.gcs import create_bucket_if_not_exists
-from app.utils.tracing import CloudTraceLoggingSpanExporter
-from app.utils.typing import Feedback
+from agent.agent import root_agent
+from agent.utils.gcs import create_bucket_if_not_exists
+from agent.utils.tracing import CloudTraceLoggingSpanExporter
+from agent.utils.typing import Feedback
+from agent.prompts import return_instructions_root
 
 
 class AgentEngineApp(AdkApp):
@@ -122,7 +123,7 @@ def deploy_agent_engine_app(
         "description": "A base ReAct agent built with Google's Agent Development Kit (ADK)",
         "extra_packages": extra_packages,
         "env_vars": env_vars,
-        "service_account": service_account,
+    #    "service_account": service_account,
     }
     logging.info(f"Agent config: {agent_config}")
     agent_config["requirements"] = requirements
@@ -179,7 +180,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--extra-packages",
         nargs="+",
-        default=["./app"],
+        default=["./agent"],
         help="Additional packages to include",
     )
     parser.add_argument(
@@ -218,5 +219,5 @@ if __name__ == "__main__":
         requirements_file=args.requirements_file,
         extra_packages=args.extra_packages,
         env_vars=env_vars,
-        service_account=args.service_account,
+        # service_account=args.service_account,
     )
