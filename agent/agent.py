@@ -19,7 +19,15 @@ from zoneinfo import ZoneInfo
 import google.auth
 from google.adk.agents import Agent
 from google.adk.agents import LlmAgent
-from agent.prompts import return_instructions_root
+from google.adk.agents import SequentialAgent
+from agent.prompts import return_instructions_root, return_instruction_liability, return_instruction_questionnaire
+from agent.connector_tools import get_google_drive_tool
+from agent.connector_tools import get_google_doc_tool
+
+google_doc_tool = get_google_doc_tool()
+google_drive_tool = get_google_drive_tool()
+# from agent.tools.doc_publisher import docs_batch_update
+
 
 credentials, project_id = google.auth.default()
 if not project_id:
@@ -31,45 +39,74 @@ os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
+# Questionnaire Agent
+questionnaire_agent= LlmAgent(
+    name="questionnaire_agent",
+    model = "gemini-2.5-pro",
+    description="Answer standard questionnaires from the uploaded contract.",
+    instruction = return_instruction_questionnaire(),
+    output_key="questionnaire_answers",
+)
 
 
-def get_weather(query: str) -> str:
-    """Simulates a web search. Use it get information on weather.
+# Liability Agent
+liability_agent= LlmAgent(
+    name="liability_agent",
+    model = "gemini-2.5-pro",
+    description="Answer liabiliy questions from the uploaded contract and trigger escalation levels.",
+    instruction = return_instruction_liability(),
+    output_key="liability_answers",
+)
 
-    Args:
-        query: A string containing the location to get weather information for.
+# Publisher Agent to Google Drive
+publisher_agent= LlmAgent(
+    name="publisher_agent",
+    model = "gemini-2.5-pro",
+    instruction = ("""
+      Call tool `gdrv_POST_v3_files` with:
+        {
+          \"body\": {
+            \"name\": \"Contract Analysis – Report\",
+            \"mimeType\": \"application/vnd.google-apps.document\"
+          }
+        "}
+        Do NOT return any output for the user! 
+    """),
+    tools=[google_drive_tool],
+    output_key = "document_id",
+)
 
-    Returns:
-        A string with the simulated weather information for the queried location.
-    """
-    if "sf" in query.lower() or "san francisco" in query.lower():
-        return "It's 60 degrees and foggy."
-    return "It's 90 degrees and sunny."
+# Writer Agent
+writer_agent= LlmAgent(
+    name="writer_agent",
+    model = "gemini-2.5-pro",
+    instruction = ("""
+    Compose the report from:
+    - Questionnaire: {questionnaire_answers}
+    - Liability: {liability_answers}
+    and write it into the freshly created document using the {document_id}.
+    CALL exactly one tool: google_doc_tool to do that.
+    Do NOT OUTPUT ANY TEXT! ONLY after the tool run return: "Awesome, that was a success ! :) "
+    """),
+    tools=[google_doc_tool],
+    output_key = "publish_result",
+)
 
-
-def get_current_time(query: str) -> str:
-    """Simulates getting the current time for a city.
-
-    Args:
-        city: The name of the city to get the current time for.
-
-    Returns:
-        A string with the current time information.
-    """
-    if "sf" in query.lower() or "san francisco" in query.lower():
-        tz_identifier = "America/Los_Angeles"
-    else:
-        return f"Sorry, I don't have timezone information for query: {query}."
-
-    tz = ZoneInfo(tz_identifier)
-    now = datetime.datetime.now(tz)
-    return f"The current time for query {query} is {now.strftime('%Y-%m-%d %H:%M:%S %Z%z')}"
-
+# Contract Analysis Team (Sequential Agent)
+contract_analysis_team = SequentialAgent(
+    name="contract_analysis_team",
+    description="Performs a multi-stage contract analysis by processing documents, retrieving relevant BGB information, and preparing a final analysis.", 
+    sub_agents = [questionnaire_agent,
+                  liability_agent,
+                  publisher_agent,
+                  writer_agent
+                  ],
+)
 
 root_agent = Agent(
     name="root_agent",
     model="gemini-2.5-flash",
     description = "Greets the user and guides the user through the Contract Analysis Process.",
     instruction=return_instructions_root(),
-    # tools=[get_weather, get_current_time],
+    sub_agents=[contract_analysis_team],
 )
